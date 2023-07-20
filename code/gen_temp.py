@@ -1,35 +1,52 @@
+import argparse
 import datetime
 import json
 import random
-import argparse
+import time
 
 import boto3
 
-# aws-vault exec personal-tf -- poetry run python gen_temp.py sensor_stream
+# aws-vault exec personal-tf -- poetry run python gen_temp.py sensor_stream_json
 
+NUM_SENSORS = 10
+N_SAMPLES = 25000
+LAST_N_DAYS = 3
 HIVE_DATA_FMT = "%Y-%m-%d %H:%M:%S.%f"
 
 
-def get_random_data():
-    current_temperature = round(10 + random.random() * 170, 2)
-    if current_temperature > 160:
-        status = "ERROR"
-    elif current_temperature > 140 or random.randrange(1, 100) > 80:
-        status = random.choice(["WARNING", "ERROR"])
-    else:
-        status = "OK"
-    return {
-        "sensor_id": random.randrange(1, 100),
-        "current_temperature": current_temperature,
-        "status": status,
-        "event_time": datetime.datetime.utcnow().strftime(HIVE_DATA_FMT),
-    }
+class Sensor:
+    def __init__(self, sensor_id: int, ):
+        self.sensor_id = sensor_id
+        self.mean_measure = 10 + random.random() * 170
+
+    def random_signal(self):
+        measure = random.gauss(self.mean_measure, self.mean_measure / 10)
+
+        return {
+            "sensor_id": self.sensor_id,
+            "measure": round(measure, 2),
+            "event_time": self._random_date(LAST_N_DAYS).strftime(HIVE_DATA_FMT),
+        }
+
+    def _random_date(self, last_n_days: int):
+        now = datetime.datetime.utcnow()
+        past = now - datetime.timedelta(days=-last_n_days)
+
+        tstamps = map(int, map(time.mktime, [now.timetuple(), past.timetuple()]))
+        random_tstamp = random.randint(*tstamps)
+
+        return datetime.datetime.fromtimestamp(random_tstamp)
+
+
+sensors = [Sensor(sensor_id) for sensor_id in range(NUM_SENSORS)]
 
 
 def send_data(stream_name, client):
-    while True:
-        data = get_random_data()
-        print(data)
+    for i in range(1, N_SAMPLES + 1):
+        random_sensor = random.choice(sensors)
+        data = random_sensor.random_signal()
+        print(f"[{i}/{N_SAMPLES}]\n\t{data}")
+
         client.put_record(
             DeliveryStreamName=stream_name, Record={"Data": json.dumps(data)}
         )

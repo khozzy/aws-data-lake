@@ -1,18 +1,16 @@
-#  MSCK REPAIR TABLE sensors;
-
 resource "aws_glue_catalog_database" "glue_db" {
   name = var.glue_catalog_db_name
 }
 
-resource "aws_glue_catalog_table" "glue_sensor_table" {
+resource "aws_glue_catalog_table" "sensors_json" {
   database_name = aws_glue_catalog_database.glue_db.name
-  name          = "sensors"
+  name          = "sensors_json"
 
   table_type = "EXTERNAL_TABLE"
 
   parameters = {
-    EXTERNAL              = "TRUE"
-    "parquet.compression" = "GZIP"
+    "EXTERNAL" : "true",
+    "classification" : "json"
   }
 
   partition_keys {
@@ -26,7 +24,50 @@ resource "aws_glue_catalog_table" "glue_sensor_table" {
   }
 
   storage_descriptor {
-    location      = "s3://${aws_s3_bucket.sink.id}/sensors_raw"
+    location      = "s3://${aws_s3_bucket.sink.id}/sensors_raw/json/"
+    input_format  = "org.apache.hadoop.mapred.TextInputFormat"
+    output_format = "org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat"
+
+    ser_de_info {
+      serialization_library = "org.openx.data.jsonserde.JsonSerDe"
+    }
+
+    columns {
+      name = "measure"
+      type = "float"
+    }
+
+    columns {
+      name = "event_time"
+      type = "timestamp"
+    }
+  }
+}
+
+resource "aws_glue_catalog_table" "sensors_parquet" {
+  database_name = aws_glue_catalog_database.glue_db.name
+  name          = "sensors_parquet"
+
+  table_type = "EXTERNAL_TABLE"
+
+  parameters = {
+    EXTERNAL = "TRUE"
+    #    "parquet.compression" = "GZIP"
+    "classification" : "parquet"
+  }
+
+  partition_keys {
+    name = "sensor_id"
+    type = "int"
+  }
+
+  partition_keys {
+    name = "dt"
+    type = "string"
+  }
+
+  storage_descriptor {
+    location      = "s3://${aws_s3_bucket.sink.id}/sensors_raw/parquet/"
     input_format  = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat"
     output_format = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat"
 
@@ -39,13 +80,8 @@ resource "aws_glue_catalog_table" "glue_sensor_table" {
     }
 
     columns {
-      name = "current_temperature"
+      name = "measure"
       type = "float"
-    }
-
-    columns {
-      name = "status"
-      type = "string"
     }
 
     columns {
