@@ -34,7 +34,7 @@ data "aws_iam_policy_document" "kinesis_firehose_delivery_policy" {
       "kinesis:ListShards"
     ]
     resources = [
-      "arn:aws:kinesis:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:stream/${var.firehose_sensor_stream_name}"
+      "arn:aws:kinesis:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:stream/${var.firehose_stream_name}"
     ]
   }
   statement {
@@ -46,8 +46,8 @@ data "aws_iam_policy_document" "kinesis_firehose_delivery_policy" {
     resources = [
       "arn:aws:glue:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:catalog",
       "arn:aws:glue:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:database/${aws_glue_catalog_database.glue_db.name}",
-      aws_glue_catalog_table.sensors_parquet.arn,
-      aws_glue_catalog_table.sensors_json.arn,
+      aws_glue_catalog_table.events_json.arn,
+      aws_glue_catalog_table.events_parquet.arn,
     ]
   }
 
@@ -71,8 +71,13 @@ resource "aws_iam_role" "firehose_delivery_role" {
 }
 
 resource "aws_kinesis_firehose_delivery_stream" "json_firehose_stream" {
-  name        = "${var.firehose_sensor_stream_name}_json"
+  name        = "${var.firehose_stream_name}_json"
   destination = "extended_s3"
+
+  server_side_encryption {
+    enabled = true
+    key_type = "AWS_OWNED_CMK"
+  }
 
   extended_s3_configuration {
     role_arn   = aws_iam_role.firehose_delivery_role.arn
@@ -81,8 +86,10 @@ resource "aws_kinesis_firehose_delivery_stream" "json_firehose_stream" {
     buffer_size     = 64 # mb
     buffer_interval = 60 # sec
 
-    prefix              = "sensors_raw/json/sensor_id=!{partitionKeyFromQuery:sensor_id}/dt=!{timestamp:yyyy-MM-dd}/"
-    error_output_prefix = "errors/json/dt=!{timestamp:yyyy-MM-dd}/!{firehose:error-output-type}/"
+    compression_format = "GZIP"
+
+    prefix              = "events_raw/json/name=!{partitionKeyFromQuery:event_name}/d=!{timestamp:yyyy-MM-dd}/"
+    error_output_prefix = "errors/json/d=!{timestamp:yyyy-MM-dd}/!{firehose:error-output-type}/"
 
     dynamic_partitioning_configuration {
       enabled = "true"
@@ -92,10 +99,6 @@ resource "aws_kinesis_firehose_delivery_stream" "json_firehose_stream" {
       enabled = "true"
 
       processors {
-        type = "AppendDelimiterToRecord"
-      }
-
-      processors {
         type = "MetadataExtraction"
         parameters {
           parameter_name  = "JsonParsingEngine"
@@ -103,7 +106,7 @@ resource "aws_kinesis_firehose_delivery_stream" "json_firehose_stream" {
         }
         parameters {
           parameter_name  = "MetadataExtractionQuery"
-          parameter_value = "{sensor_id:.sensor_id}"
+          parameter_value = "{event_name:.name, event_date:.tstamp | split(\".\")[0] | strptime(\"%Y-%m-%d %H:%M:%S\") | strftime(\"%Y-%m\")}"
         }
       }
     }
@@ -117,7 +120,7 @@ resource "aws_kinesis_firehose_delivery_stream" "json_firehose_stream" {
 }
 
 resource "aws_kinesis_firehose_delivery_stream" "parquet_firehose_stream" {
-  name        = "${var.firehose_sensor_stream_name}_parquet"
+  name        = "${var.firehose_stream_name}_parquet"
   destination = "extended_s3"
 
   extended_s3_configuration {
@@ -131,15 +134,11 @@ resource "aws_kinesis_firehose_delivery_stream" "parquet_firehose_stream" {
       enabled = "true"
     }
 
-    prefix              = "sensors_raw/parquet/sensor_id=!{partitionKeyFromQuery:sensor_id}/dt=!{timestamp:yyyy-MM-dd}/"
-    error_output_prefix = "errors/parquet/dt=!{timestamp:yyyy-MM-dd}/!{firehose:error-output-type}/"
+    prefix              = "events_raw/parquet/name=!{partitionKeyFromQuery:event_name}/d=!{timestamp:yyyy-MM-dd}/"
+    error_output_prefix = "errors/parquet/d=!{timestamp:yyyy-MM-dd}/!{firehose:error-output-type}/"
 
     processing_configuration {
       enabled = "true"
-
-      processors {
-        type = "AppendDelimiterToRecord"
-      }
 
       processors {
         type = "MetadataExtraction"
@@ -149,7 +148,7 @@ resource "aws_kinesis_firehose_delivery_stream" "parquet_firehose_stream" {
         }
         parameters {
           parameter_name  = "MetadataExtractionQuery"
-          parameter_value = "{sensor_id:.sensor_id}"
+          parameter_value = "{event_name:.name}"
         }
       }
     }
@@ -164,14 +163,14 @@ resource "aws_kinesis_firehose_delivery_stream" "parquet_firehose_stream" {
       output_format_configuration {
         serializer {
           parquet_ser_de {
-            #            compression = "GZIP"
+            compression = "GZIP"
           }
         }
       }
 
       schema_configuration {
         database_name = aws_glue_catalog_database.glue_db.name
-        table_name    = aws_glue_catalog_table.sensors_parquet.name
+        table_name    = aws_glue_catalog_table.events_parquet.name
         role_arn      = aws_iam_role.firehose_delivery_role.arn
       }
     }

@@ -2,9 +2,9 @@ resource "aws_glue_catalog_database" "glue_db" {
   name = var.glue_catalog_db_name
 }
 
-resource "aws_glue_catalog_table" "sensors_json" {
+resource "aws_glue_catalog_table" "events_json" {
   database_name = aws_glue_catalog_database.glue_db.name
-  name          = "sensors_json"
+  name          = "events_json"
 
   table_type = "EXTERNAL_TABLE"
 
@@ -14,17 +14,17 @@ resource "aws_glue_catalog_table" "sensors_json" {
   }
 
   partition_keys {
-    name = "sensor_id"
-    type = "int"
+    name = "name"
+    type = "string"
   }
 
   partition_keys {
-    name = "dt"
+    name = "d"
     type = "string"
   }
 
   storage_descriptor {
-    location      = "s3://${aws_s3_bucket.sink.id}/sensors_raw/json/"
+    location      = "s3://${aws_s3_bucket.sink.id}/events_raw/json/"
     input_format  = "org.apache.hadoop.mapred.TextInputFormat"
     output_format = "org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat"
 
@@ -33,41 +33,45 @@ resource "aws_glue_catalog_table" "sensors_json" {
     }
 
     columns {
-      name = "measure"
-      type = "float"
+      name = "tstamp"
+      type = "timestamp"
     }
 
     columns {
-      name = "event_time"
-      type = "timestamp"
+      name = "payload"
+      type = "string"
+    }
+
+    columns {
+      name = "payload_md5"
+      type = "string"
     }
   }
 }
 
-resource "aws_glue_catalog_table" "sensors_parquet" {
+resource "aws_glue_catalog_table" "events_parquet" {
   database_name = aws_glue_catalog_database.glue_db.name
-  name          = "sensors_parquet"
+  name          = "events_parquet"
 
   table_type = "EXTERNAL_TABLE"
 
   parameters = {
     EXTERNAL = "TRUE"
-    #    "parquet.compression" = "GZIP"
     "classification" : "parquet"
   }
 
   partition_keys {
-    name = "sensor_id"
-    type = "int"
+    name = "name"
+    type = "string"
   }
 
   partition_keys {
-    name = "dt"
+    name = "d"
     type = "string"
   }
 
   storage_descriptor {
-    location      = "s3://${aws_s3_bucket.sink.id}/sensors_raw/parquet/"
+    location      = "s3://${aws_s3_bucket.sink.id}/events_raw/parquet/"
     input_format  = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat"
     output_format = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat"
 
@@ -80,13 +84,18 @@ resource "aws_glue_catalog_table" "sensors_parquet" {
     }
 
     columns {
-      name = "measure"
-      type = "float"
+      name = "tstamp"
+      type = "timestamp"
     }
 
     columns {
-      name = "event_time"
-      type = "timestamp"
+      name = "payload"
+      type = "string"
+    }
+
+    columns {
+      name = "payload_md5"
+      type = "string"
     }
   }
 }

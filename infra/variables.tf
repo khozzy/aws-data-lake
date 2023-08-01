@@ -30,10 +30,10 @@ variable "s3_sink_bucket_name" {
 # Kinesis
 variable "kinesis_delivery_cloudwatch_log_stream" {
   type    = string
-  default = "sensor_delivery"
+  default = "events_delivery"
 }
 
-variable "firehose_sensor_stream_name" {
+variable "firehose_stream_name" {
   type    = string
-  default = "sensor_stream"
+  default = "events_stream"
 }
